@@ -243,6 +243,8 @@ const runtime: Runtime = {
 };
 
 let deliverToInstance: (inst: SpeechRecognition, msg: SpeechSessionEvent) => void;
+let handlerGet: (inst: SpeechRecognition, type: HandlerType) => Handler;
+let handlerSet: (inst: SpeechRecognition, type: HandlerType, value: unknown) => void;
 let failInstance: (inst: SpeechRecognition, error: SpeechErrorCode, message: string) => void;
 
 /** How long start() may wait for the extension to answer before failing with "network". */
@@ -404,33 +406,34 @@ export class SpeechRecognition extends EventTarget {
     dispatch(this, new Event("end"));
   }
 
-  /** EventHandler IDL attribute helpers. */
-  static getHandler(inst: SpeechRecognition, type: HandlerType): Handler {
-    return inst.#handlers.get(type)?.value ?? null;
-  }
-  static setHandler(inst: SpeechRecognition, type: HandlerType, value: unknown): void {
-    const handler = typeof value === "function" || (typeof value === "object" && value !== null) ? (value as Handler) : null;
-    const existing = inst.#handlers.get(type);
-    if (handler === null) {
-      if (existing) {
-        inst.removeEventListener(type, existing.listener);
-        inst.#handlers.delete(type);
+  static {
+    handlerGet = (inst, type) => inst.#handlers.get(type)?.value ?? null;
+    handlerSet = (inst, type, value) => {
+      // EventHandler IDL attribute: non-objects become null; the listener is
+      // registered when first set and keeps its position until set to null.
+      const handler = typeof value === "function" || (typeof value === "object" && value !== null) ? (value as Handler) : null;
+      const existing = inst.#handlers.get(type);
+      if (handler === null) {
+        if (existing) {
+          inst.removeEventListener(type, existing.listener);
+          inst.#handlers.delete(type);
+        }
+        return;
       }
-      return;
-    }
-    if (existing) {
-      existing.value = handler;
-      return;
-    }
-    const entry = {
-      value: handler,
-      listener: (ev: Event) => {
-        const h = entry.value;
-        if (typeof h === "function") h.call(inst, ev);
-      },
+      if (existing) {
+        existing.value = handler;
+        return;
+      }
+      const entry = {
+        value: handler,
+        listener: (ev: Event) => {
+          const h = entry.value;
+          if (typeof h === "function") h.call(inst, ev);
+        },
+      };
+      inst.#handlers.set(type, entry);
+      inst.addEventListener(type, entry.listener);
     };
-    inst.#handlers.set(type, entry);
-    inst.addEventListener(type, entry.listener);
   }
 }
 
@@ -440,23 +443,19 @@ for (const type of HANDLER_TYPES) {
   const get = {
     [`get ${name}`](this: SpeechRecognition) {
       if (!(this instanceof SpeechRecognition)) throw new NativeTypeError("Illegal invocation");
-      return SpeechRecognition.getHandler(this, type);
+      return handlerGet(this, type);
     },
   }[`get ${name}`]!;
   const set = {
     [`set ${name}`](this: SpeechRecognition, v: unknown) {
       if (!(this instanceof SpeechRecognition)) throw new NativeTypeError("Illegal invocation");
-      SpeechRecognition.setHandler(this, type, v);
+      handlerSet(this, type, v);
     },
   }[`set ${name}`]!;
   markNative(get, `get ${name}`);
   markNative(set, `set ${name}`);
   Object.defineProperty(SpeechRecognition.prototype, name, { get, set, enumerable: true, configurable: true });
 }
-
-// Hide helper statics from pages.
-delete (SpeechRecognition as unknown as Record<string, unknown>).getHandler;
-delete (SpeechRecognition as unknown as Record<string, unknown>).setHandler;
 
 // ---- wiring -------------------------------------------------------------------------
 

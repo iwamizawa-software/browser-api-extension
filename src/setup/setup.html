@@ -1,1 +1,108 @@
-<!doctype html><title>setup</title>
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>セットアップ – Unthrottled Timers &amp; Whisper SpeechRecognition</title>
+    <link rel="stylesheet" href="setup.css" />
+    <script type="module" src="setup.js"></script>
+  </head>
+  <body>
+    <main>
+      <h1>セットアップ</h1>
+
+      <section class="notice" aria-labelledby="privacy-title">
+        <h2 id="privacy-title">音声データの送信について</h2>
+        <ul>
+          <li>
+            SpeechRecognition を置き換えたサイトで認識が開始されると、マイク音声（発話区間のみ）は
+            <strong>ページの内容に関わらず Groq (api.groq.com) に送信</strong>されます。
+          </li>
+          <li>
+            下の「音声認識を有効にするサイト」に登録したサイトは、ブラウザの通常のマイク許可プロンプトなしで
+            マイクを使い、文字起こし結果を受け取れます。信頼できるサイトだけを登録してください。
+          </li>
+          <li>マイク使用中は拡張機能アイコンに <span class="badge">MIC</span> が表示されます。</li>
+          <li>API キーは拡張機能内部 (chrome.storage.local) にのみ保存され、Web ページには渡されません。</li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="mic-title">
+        <h2 id="mic-title">1. マイクの許可</h2>
+        <p>拡張機能のバックグラウンド（Offscreen Document）は許可プロンプトを出せないため、ここで一度許可してください。</p>
+        <p>現在の状態: <output id="mic-state">確認中…</output></p>
+        <button id="mic-grant" type="button">マイク許可を取得</button>
+        <p id="mic-result" role="status"></p>
+      </section>
+
+      <section aria-labelledby="key-title">
+        <h2 id="key-title">2. Groq API キー</h2>
+        <p>現在: <output id="key-state">確認中…</output></p>
+        <form id="key-form" autocomplete="off">
+          <label for="key-input">API キー</label>
+          <input id="key-input" type="password" spellcheck="false" autocomplete="off" placeholder="gsk_..." />
+          <div class="row">
+            <button id="key-save" type="submit">検証して保存</button>
+            <button id="key-save-unverified" type="button" hidden>検証せずに保存</button>
+            <button id="key-delete" type="button" class="secondary">削除</button>
+          </div>
+        </form>
+        <p id="key-result" role="status"></p>
+      </section>
+
+      <section aria-labelledby="settings-title">
+        <h2 id="settings-title">3. 設定</h2>
+        <form id="settings-form">
+          <fieldset>
+            <legend>タイマー置換 (setTimeout / setInterval)</legend>
+            <label class="check"><input id="timers-enabled" type="checkbox" /> 有効</label>
+            <label for="timers-matches">対象サイト（match pattern、1 行に 1 つ）</label>
+            <textarea id="timers-matches" rows="3" spellcheck="false"></textarea>
+            <label for="timers-exclude">除外サイト</label>
+            <textarea id="timers-exclude" rows="3" spellcheck="false"></textarea>
+          </fieldset>
+
+          <fieldset>
+            <legend>SpeechRecognition 置換</legend>
+            <label class="check"><input id="speech-enabled" type="checkbox" /> 有効</label>
+            <label for="speech-matches">音声認識を有効にするサイト（match pattern、1 行に 1 つ。空なら無効）</label>
+            <textarea id="speech-matches" rows="3" spellcheck="false" placeholder="https://example.com/*"></textarea>
+            <label for="speech-exclude">除外サイト</label>
+            <textarea id="speech-exclude" rows="2" spellcheck="false"></textarea>
+          </fieldset>
+
+          <fieldset>
+            <legend>幻覚（ハルシネーション）フィルタ</legend>
+            <label for="nsp">no_speech_prob がこの値を超えるセグメントを破棄 (0〜1)</label>
+            <input id="nsp" type="number" min="0" max="1" step="0.05" />
+            <label for="alp">avg_logprob がこの値未満のセグメントを破棄 (≤ 0)</label>
+            <input id="alp" type="number" max="0" step="0.1" />
+            <label class="check"><input id="blocklist-enabled" type="checkbox" /> 定型フレーズのブロックリストを使う</label>
+            <label for="blocklist">ブロックリスト（「言語コード: フレーズ」を 1 行に 1 つ。言語コード * は全言語）</label>
+            <textarea id="blocklist" rows="8" spellcheck="false"></textarea>
+          </fieldset>
+
+          <fieldset>
+            <legend>発話区間検出 (Silero VAD)</legend>
+            <label for="vad-threshold">音声判定しきい値 (0.05〜0.95)</label>
+            <input id="vad-threshold" type="number" min="0.05" max="0.95" step="0.05" />
+            <label for="vad-redemption">発話終了とみなす無音長 (ms)</label>
+            <input id="vad-redemption" type="number" min="100" max="5000" step="50" />
+            <label for="vad-min">これより短い発話はノイズとして破棄 (ms)</label>
+            <input id="vad-min" type="number" min="0" max="5000" step="50" />
+            <label for="vad-max">1 発話の最大長（超えたら分割, 秒）</label>
+            <input id="vad-max" type="number" min="3" max="60" step="1" />
+          </fieldset>
+
+          <div class="row">
+            <button id="settings-save" type="submit">設定を保存</button>
+            <button id="settings-reset" type="button" class="secondary">既定値に戻す</button>
+          </div>
+          <p id="settings-result" role="status"></p>
+          <p class="hint">設定の変更は、変更後に読み込んだ（再読み込みした）ページから反映されます。</p>
+          <p>登録状態: <output id="registration-state">確認中…</output></p>
+        </form>
+      </section>
+    </main>
+  </body>
+</html>
