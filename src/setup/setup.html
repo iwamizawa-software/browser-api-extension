@@ -19,8 +19,9 @@
             <strong>ページの内容に関わらず Groq (api.groq.com) に送信</strong>されます。
           </li>
           <li>
-            下の「音声認識を有効にするサイト」に登録したサイトは、ブラウザの通常のマイク許可プロンプトなしで
-            マイクを使い、文字起こし結果を受け取れます。信頼できるサイトだけを登録してください。
+            音声認識を許可するサイトは <code>manifest.json</code> にだけ書かれています（下の「3. 設定」に表示）。
+            そこに書かれたサイトは、ブラウザの通常のマイク許可プロンプトなしでマイクを使い、文字起こし結果を受け取れます。
+            信頼できるサイトだけを書いてください。
           </li>
           <li>マイク使用中は拡張機能アイコンに <span class="badge">MIC</span> が表示されます。</li>
           <li>API キーは拡張機能内部 (chrome.storage.local) にのみ保存され、Web ページには渡されません。</li>
@@ -64,11 +65,21 @@
 
           <fieldset>
             <legend>SpeechRecognition 置換</legend>
-            <label class="check"><input id="speech-enabled" type="checkbox" /> 有効</label>
-            <label for="speech-matches">音声認識を有効にするサイト（match pattern、1 行に 1 つ。空なら無効）</label>
-            <textarea id="speech-matches" rows="3" spellcheck="false" placeholder="https://example.com/*"></textarea>
-            <label for="speech-exclude">除外サイト</label>
-            <textarea id="speech-exclude" rows="2" spellcheck="false"></textarea>
+            <p>
+              許可サイト（<code>manifest.json</code> の <code>content_scripts</code> で固定。ここからは変更できません）:
+            </p>
+            <ul id="speech-allowlist"></ul>
+            <p id="speech-allowlist-problems" class="err"></p>
+            <p class="hint">
+              変更するには <code>src/manifest.json</code>（ビルド後なら <code>dist/manifest.json</code>）の
+              <code>main-speech.js</code> と <code>isolated-speech.js</code> の 2 つのエントリの
+              <code>matches</code> / <code>exclude_matches</code> を同じ内容に書き換え、拡張機能を再読み込みしてください。
+            </p>
+            <label class="check"><input id="speech-enabled" type="checkbox" /> 音声認識を使う</label>
+            <p class="hint">
+              OFF にするとマイクを使わず、認識はすべて <code>service-not-allowed</code> で失敗します。
+              許可サイト上の置換自体（ネイティブ実装が使われないこと）は変わりません。
+            </p>
           </fieldset>
 
           <fieldset>

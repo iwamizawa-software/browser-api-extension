@@ -1,7 +1,11 @@
-// Content scripts are registered dynamically (chrome.scripting) instead of in
-// manifest.json, so that the ON/OFF switches and the per-site allow/exclude
-// lists take effect at document_start without any async settings lookup in
-// the page. Changes apply to documents loaded after the change.
+// Timer content scripts are registered dynamically (chrome.scripting) instead
+// of in manifest.json, so that the ON/OFF switch and the per-site
+// target/exclude lists take effect at document_start without any async
+// settings lookup in the page. Changes apply to documents loaded afterwards.
+//
+// Speech content scripts are NOT registered here: they are static
+// content_scripts in manifest.json, whose matches are the speech allow-list
+// (see src/shared/speech-allowlist.ts). Runtime settings cannot widen it.
 
 import type { FeatureScope, Settings } from "../shared/settings";
 
@@ -9,7 +13,7 @@ export const SCRIPT_ID_PREFIX = "bae-";
 
 type Registered = chrome.scripting.RegisteredContentScript;
 
-function scriptsFor(feature: "timers" | "speech", scope: FeatureScope, fallbackOrigin: boolean): Registered[] {
+function scriptsFor(feature: "timers", scope: FeatureScope, fallbackOrigin: boolean): Registered[] {
   if (!scope.enabled || scope.matches.length === 0) return [];
   const base = {
     matches: scope.matches,
@@ -17,8 +21,8 @@ function scriptsFor(feature: "timers" | "speech", scope: FeatureScope, fallbackO
     runAt: "document_start" as const,
     allFrames: true,
     persistAcrossSessions: true,
-    // Timers only: also inject into about:blank / srcdoc frames of matching
-    // origins, which pages could otherwise use to obtain unpatched natives.
+    // Also inject into about:blank / srcdoc frames of matching origins, which
+    // pages could otherwise use to obtain unpatched natives.
     ...(fallbackOrigin ? { matchOriginAsFallback: true } : {}),
   };
   return [
@@ -28,7 +32,7 @@ function scriptsFor(feature: "timers" | "speech", scope: FeatureScope, fallbackO
 }
 
 export function desiredScripts(settings: Settings, withFallbackOrigin: boolean): Registered[] {
-  return [...scriptsFor("timers", settings.timers, withFallbackOrigin), ...scriptsFor("speech", settings.speech, false)];
+  return scriptsFor("timers", settings.timers, withFallbackOrigin);
 }
 
 export interface RegistrationStatus {

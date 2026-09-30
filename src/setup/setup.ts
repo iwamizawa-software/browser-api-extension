@@ -2,6 +2,7 @@
 // All dynamic text is set with textContent (never innerHTML).
 
 import { STORAGE_KEYS, defaultSettings, isPlausibleApiKey, sanitizeSettings, type Settings } from "../shared/settings";
+import { speechAllowlistFromManifest, validateSpeechAllowlist } from "../shared/speech-allowlist";
 import { formatBlocklist, maskKey, parseBlocklist, parsePatternList } from "./forms";
 
 const $ = <T extends HTMLElement>(id: string) => {
@@ -145,8 +146,6 @@ const f = {
   timersMatches: $<HTMLTextAreaElement>("timers-matches"),
   timersExclude: $<HTMLTextAreaElement>("timers-exclude"),
   speechEnabled: $<HTMLInputElement>("speech-enabled"),
-  speechMatches: $<HTMLTextAreaElement>("speech-matches"),
-  speechExclude: $<HTMLTextAreaElement>("speech-exclude"),
   nsp: $<HTMLInputElement>("nsp"),
   alp: $<HTMLInputElement>("alp"),
   blocklistEnabled: $<HTMLInputElement>("blocklist-enabled"),
@@ -164,8 +163,6 @@ function fill(s: Settings): void {
   f.timersMatches.value = s.timers.matches.join("\n");
   f.timersExclude.value = s.timers.excludeMatches.join("\n");
   f.speechEnabled.checked = s.speech.enabled;
-  f.speechMatches.value = s.speech.matches.join("\n");
-  f.speechExclude.value = s.speech.excludeMatches.join("\n");
   f.nsp.value = String(s.speech.noSpeechProbThreshold);
   f.alp.value = String(s.speech.avgLogprobThreshold);
   f.blocklistEnabled.checked = s.speech.blocklistEnabled;
@@ -194,8 +191,6 @@ $<HTMLFormElement>("settings-form").addEventListener("submit", async (ev) => {
   const lists = {
     "タイマー対象": parsePatternList(f.timersMatches.value),
     "タイマー除外": parsePatternList(f.timersExclude.value),
-    "音声認識対象": parsePatternList(f.speechMatches.value),
-    "音声認識除外": parsePatternList(f.speechExclude.value),
   };
   const bl = parseBlocklist(f.blocklist.value);
   const errors = Object.entries(lists)
@@ -214,8 +209,6 @@ $<HTMLFormElement>("settings-form").addEventListener("submit", async (ev) => {
     },
     speech: {
       enabled: f.speechEnabled.checked,
-      matches: lists["音声認識対象"].patterns,
-      excludeMatches: lists["音声認識除外"].patterns,
       noSpeechProbThreshold: f.nsp.valueAsNumber,
       avgLogprobThreshold: f.alp.valueAsNumber,
       blocklistEnabled: f.blocklistEnabled.checked,
@@ -228,12 +221,6 @@ $<HTMLFormElement>("settings-form").addEventListener("submit", async (ev) => {
   };
   // sanitize clamps numbers and drops anything invalid; show what is stored.
   const settings = sanitizeSettings(raw);
-  if (settings.speech.enabled && settings.speech.matches.includes("<all_urls>")) {
-    const ok = confirm(
-      "音声認識を <all_urls> で有効にすると、あらゆるサイトが許可プロンプトなしでマイクを使い文字起こし結果を受け取れます。よろしいですか？",
-    );
-    if (!ok) return;
-  }
   await chrome.storage.local.remove(STORAGE_KEYS.registrationStatus);
   await chrome.storage.local.set({ [STORAGE_KEYS.settings]: settings });
   fill(settings);
@@ -251,6 +238,36 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (STORAGE_KEYS.apiKey in changes) void refreshKeyState();
 });
 
+// ---- speech allow-list (read-only, from manifest.json) -------------------------------
+
+function showSpeechAllowlist(): void {
+  const allowlist = speechAllowlistFromManifest(chrome.runtime.getManifest() as Parameters<typeof speechAllowlistFromManifest>[0]);
+  const list = $<HTMLUListElement>("speech-allowlist");
+  list.replaceChildren();
+  const entry = allowlist.main;
+  const add = (text: string) => {
+    const li = document.createElement("li");
+    const code = document.createElement("code");
+    code.textContent = text;
+    li.append(code);
+    list.append(li);
+  };
+  for (const m of entry?.matches ?? []) add(m);
+  for (const m of entry?.exclude_matches ?? []) add(`除外: ${m}`);
+  if (!entry?.matches?.length) {
+    const li = document.createElement("li");
+    li.textContent = "なし（音声認識はどのサイトでも無効）";
+    list.append(li);
+  }
+  const problems = validateSpeechAllowlist(allowlist);
+  say(
+    $("speech-allowlist-problems"),
+    problems.length ? `manifest.json の設定に問題があります（安全側で認識を拒否します）:\n${problems.join("\n")}` : "",
+    problems.length ? "err" : "",
+  );
+}
+
+showSpeechAllowlist();
 void refreshMicState();
 void refreshKeyState();
 void loadSettings();

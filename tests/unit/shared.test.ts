@@ -85,7 +85,7 @@ describe("settings", () => {
     expect(s.speech.avgLogprobThreshold).toBe(-1);
     expect(s.speech.maxUtteranceSec).toBe(60);
     expect(s.speech.blocklist).toEqual({ ja: ["a"] });
-    expect(s.speech.matches).toEqual([]);
+    expect("matches" in s.speech).toBe(false);
   });
 
   it("checks api key shape", () => {

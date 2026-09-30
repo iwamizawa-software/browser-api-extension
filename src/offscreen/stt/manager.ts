@@ -3,16 +3,17 @@
 // Security checks (the content scripts and everything behind them are
 // untrusted):
 //   * every message is schema-validated,
-//   * the requesting frame's URL must match the user's speech allow-list
-//     (defense in depth on top of the content script registration),
+//   * the requesting frame's URL must match the speech allow-list in
+//     manifest.json (defense in depth on top of Chrome's own injection
+//     matching; see src/shared/speech-allowlist.ts),
 //   * session counts are capped per frame and globally,
 //   * the API key is fetched from the service worker per session and is only
 //     used for the Authorization header; it is never sent to content scripts.
 
 import { resolveLanguage } from "../../shared/lang";
-import { urlAllowedBy } from "../../shared/match-pattern";
 import { isSpeechUpToOffscreen, type SpeechDownFromOffscreen, type SpeechUpToOffscreen } from "../../shared/protocol";
 import { isPlausibleApiKey, type Settings } from "../../shared/settings";
+import { isSpeechAllowedByManifest, type SpeechAllowlist } from "../../shared/speech-allowlist";
 import { interpretTranscription } from "./filter";
 import { SttError, transcribeWithGroq } from "./groq";
 import { AudioHub, FRAME_MS, SAMPLE_RATE } from "./hub";
@@ -29,6 +30,11 @@ const MAX_SESSIONS_TOTAL = 32;
 
 export interface OffscreenConfig {
   settings: Settings;
+  /**
+   * manifest.json's speech content_scripts, read by the service worker
+   * (offscreen documents have no chrome.runtime.getManifest).
+   */
+  speechAllowlist: SpeechAllowlist;
   apiKey: string;
   setupUrl: string;
 }
@@ -111,10 +117,13 @@ export class SpeechManager {
     } catch {
       return { ok: false, error: "network", message: "Extension configuration unavailable." };
     }
-    const { settings, apiKey, setupUrl } = config;
+    const { settings, apiKey, setupUrl, speechAllowlist } = config;
     const speech = settings.speech;
-    if (!speech.enabled || !urlAllowedBy(frameUrl, speech.matches, speech.excludeMatches)) {
+    if (!isSpeechAllowedByManifest(frameUrl, speechAllowlist)) {
       return { ok: false, error: "service-not-allowed", message: "Speech recognition is not enabled for this site." };
+    }
+    if (!speech.enabled) {
+      return { ok: false, error: "service-not-allowed", message: "Speech recognition is turned off." };
     }
     if (!isPlausibleApiKey(apiKey)) {
       post({ t: "log", level: "warn", message: `Groq API key is not configured. Open the setup page: ${setupUrl}` });

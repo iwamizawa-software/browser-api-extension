@@ -37,9 +37,30 @@ npm run build        # -> dist/
 4. セットアップページで次を行います。
    - **マイク許可を取得**: 拡張機能オリジンにマイク権限を付与します（Offscreen Document は許可プロンプトを出せないため）。
    - **Groq API キー**: 入力して「検証して保存」。`GET https://api.groq.com/openai/v1/models` で検証してから `chrome.storage.local` に保存します。キーはビルドに埋め込みません。
-   - **音声認識を有効にするサイト**: match pattern で登録します（例 `https://example.com/*`）。**既定では空（どのサイトでも無効）** です。理由は[セキュリティ上の設計](#セキュリティ上の設計)を参照。
    - 必要に応じてタイマー置換の対象 / 除外サイト、幻覚フィルタの閾値、VAD パラメータを変更します。
-5. 設定変更は **変更後に読み込んだ（再読み込みした）ページ** から反映されます。
+5. **音声認識を許可するサイトは `manifest.json` に直接書きます**（Setup ページからは変更できません）。次の節を参照。
+6. 設定変更は **変更後に読み込んだ（再読み込みした）ページ** から反映されます。
+
+### 音声認識の許可サイト（manifest.json）
+
+`SpeechRecognition` を置き換えるサイトの許可リストは、`manifest.json` の `content_scripts` にある **2 つのエントリ**（`main-speech.js` と `isolated-speech.js`）の `matches` / `exclude_matches` そのものです。**初期値は `https://example.com/*` だけ** です。
+
+```jsonc
+"content_scripts": [
+  { "matches": ["https://example.com/*"], "exclude_matches": [], "js": ["main-speech.js"],     "world": "MAIN",     "run_at": "document_start", "all_frames": true },
+  { "matches": ["https://example.com/*"], "exclude_matches": [], "js": ["isolated-speech.js"], "world": "ISOLATED", "run_at": "document_start", "all_frames": true }
+]
+```
+
+変更手順:
+
+1. `src/manifest.json` の **2 つのエントリの `matches` と `exclude_matches` を同じ内容に** 書き換えます（match pattern 形式。例 `"https://app.example.jp/*"`）。
+2. `npm run build` を実行します。2 つのエントリが食い違っている、`world` / `run_at` が違う、`include_globs` / `exclude_globs` を使っている場合は **ビルドが失敗** します。
+3. `chrome://extensions` で拡張機能を再読み込みし、対象ページも再読み込みします。
+
+ビルド済みの `dist/manifest.json` を直接編集することもできます（この場合ビルド時の検査は通らないので、2 つのエントリを必ず同じにしてください）。食い違っていた場合は、Offscreen 側が「**両方のエントリに一致するフレームだけ許可**」するため安全側に倒れ、Setup ページと Service Worker のコンソールにも問題が表示されます。音声認識を完全に無効にするには 2 つのエントリを両方削除します。
+
+Setup ページの「音声認識を使う」は、許可サイトを狭めることしかできない **緊急停止スイッチ** です。OFF にするとマイクを使わずに認識がすべて `service-not-allowed` で失敗します（許可サイト上で置換されていること自体は変わりません。ネイティブ実装に戻したい場合は manifest から外してください）。
 
 `dist/` 以外に `npm run build:e2e` が作る `dist-e2e/` がありますが、これは Groq の代わりにローカルのモックサーバー（`http://127.0.0.1:8787`）へ送るテスト専用ビルドです。**配布には使わないでください。**
 
@@ -66,7 +87,8 @@ npm run build        # -> dist/
  │ Offscreen Document (拡張オリジン, 1 個だけ)   │◀──────▶│ Service Worker (常駐しない)      │
  │ reasons: WORKERS, USER_MEDIA             │ get-   │ - Offscreen の作成/存在確認       │
  │  TimerHost ─ Dedicated Worker            │ config │   (offscreen / getContexts)     │
- │    (ポートごとに相対 ms の timeout 1 本)       │        │ - content script の動的登録      │
+ │    (ポートごとに相対 ms の timeout 1 本)       │        │ - タイマー用 content script の     │
+ │                                          │        │   動的登録                      │
  │  SpeechManager                           │        │ - 設定+API キーを Offscreen にだけ │
  │    AudioHub: getUserMedia 1 本 + Silero   │        │   渡す / MIC バッジ表示           │
  │      VAD 1 個 (vad-web, ORT wasm 同梱)     │        └──────────────────────────────┘
@@ -94,7 +116,7 @@ npm run build        # -> dist/
 
 1. ページが `start()` → MAIN が `{t:"start", sid, lang, continuous, maxAlternatives}` を送信。
 2. ISOLATED が Permissions Policy（`microphone`）を確認し、`<html lang>` と `navigator.language` を付けて Offscreen へ。
-3. Offscreen が Service Worker から設定と API キーを取得し、送信元フレーム URL が許可リストに入っているか再確認、言語解決、拡張機能のマイク権限確認。
+3. Offscreen が Service Worker から設定・API キー・manifest.json の許可リストを取得し、送信元フレーム URL が許可リストに入っているか再確認、言語解決、拡張機能のマイク権限確認。
 4. 共有 `AudioHub`（マイク 1 本 + Silero VAD 1 個）からフレーム（16 kHz, 512 サンプル = 32 ms）と発話確率を受け取り、セッションごとの `Segmenter` で発話区間を切り出し。
 5. 発話区間を 16bit PCM WAV にして Groq に送信 → `verbose_json` を幻覚フィルタにかけ → 結果だけを MAIN に返す。
 6. 全セッション終了から 3 秒後にマイクを解放します（`onend` で再 `start()` するアプリでマイクが点滅しないように）。
@@ -147,9 +169,10 @@ npm run build        # -> dist/
 - **API キーと生音声は MAIN world に一切渡しません。** MAIN に届くのはイベント種別と文字起こし結果（およびエラーコード）だけです。
 - API キーは `chrome.storage.local` に保存し、Service Worker が **送信元が自拡張の Offscreen Document（URL 一致・タブ無し）であることを確認したときだけ** 渡します。content script からの `get-config` は拒否します。
 - `chrome.storage.local.setAccessLevel({accessLevel: "TRUSTED_CONTEXTS"})` で content script からストレージを読めなくしています（Chromium の現行実装では local でも有効・永続化されることをソースで確認。古い Chrome で未対応の場合は警告ログのみ）。
-- **音声認識は許可リスト方式（既定は空）です。** 置換した `SpeechRecognition` は拡張機能のマイク権限を使うため、登録したサイトは **サイトごとの許可プロンプトなしで** マイクを使い、文字起こし結果を受け取れます。そこで:
-  - 登録は match pattern の許可リストで行い、`<all_urls>` の登録時は確認ダイアログを出します。
-  - content script の登録範囲に加え、Offscreen 側でも送信元フレーム URL を許可リストと照合します（多層防御）。
+- **音声認識は manifest.json に固定した許可リスト方式です（初期値は `https://example.com/*` のみ）。** 置換した `SpeechRecognition` は拡張機能のマイク権限を使うため、許可したサイトは **サイトごとの許可プロンプトなしで** マイクを使い、文字起こし結果を受け取れます。そこで:
+  - 許可リストは設定（`chrome.storage`）ではなく `manifest.json` の静的な `content_scripts` にあります。拡張機能のページ・ストレージ・Web ページのどこからも実行時に広げられず、変更には manifest の編集と拡張機能の再読み込みが必要です。
+  - Chrome による注入範囲に加え、Offscreen 側でも送信元フレーム URL を manifest の 2 つのエントリの両方と照合します（多層防御。食い違っていれば拒否）。
+  - Setup ページの「音声認識を使う」は許可を狭める方向（OFF）にしか働きません。
   - iframe の Permissions Policy（`allow="microphone"`）が無ければ `not-allowed` にします（ネイティブと同じ挙動）。
   - マイク使用中は拡張機能アイコンに赤い **MIC** バッジを表示します。
   - 同時セッション数を 1 フレーム 8 / 全体 32 に制限します。
@@ -158,7 +181,7 @@ npm run build        # -> dist/
 - 拡張ページの CSP: `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; connect-src 'self' https://api.groq.com; ...`。Groq 以外への通信を拡張ページからできないようにしています。
 - Setup ページは動的な文字列を `textContent` だけで表示し、保存済みキーは先頭 4 文字と末尾 4 文字しか表示しません。
 - ログに API キーを出しません（`Authorization` ヘッダ以外では使いません）。
-- 許可リストに入れたサイトは、ユーザーの Groq の利用枠を消費できます。信頼できるサイトだけを登録してください。
+- 許可リストに入れたサイトは、ユーザーの Groq の利用枠を消費できます。信頼できるサイトだけを書いてください。
 
 ---
 
@@ -195,9 +218,10 @@ npm run build        # -> dist/
 
 ### content script の登録
 
-- `document_start` の時点で ON/OFF・サイト別の設定を同期的に反映する必要があり、content script から `chrome.storage` を非同期に読むと間に合わないため、**`chrome.scripting.registerContentScripts` による動的登録** にしました（設定変更時に Service Worker が登録し直す）。このため `host_permissions` に `<all_urls>` が必要です（`https://api.groq.com/*` も明示）。
+- **タイマー**: `document_start` の時点で ON/OFF・サイト別の設定を同期的に反映する必要があり、content script から `chrome.storage` を非同期に読むと間に合わないため、**`chrome.scripting.registerContentScripts` による動的登録** にしました（設定変更時に Service Worker が登録し直す）。このため `host_permissions` に `<all_urls>` が必要です（`https://api.groq.com/*` も明示）。
+- **音声認識**: 当初は同じ動的登録＋設定の許可リストでしたが、「実行時の設定で許可範囲を変えられない方が安全」という判断で、**`manifest.json` の静的な `content_scripts`** に変更しました。許可リストの唯一の出所は manifest です。Offscreen Document では `chrome.runtime.getManifest()` が使えない（`chrome.runtime` の一部しか公開されない。実機で確認）ため、Service Worker が `getManifest()` で同じエントリを読み、`get-config` の応答に入れて Offscreen に渡し、Offscreen がそれで照合します。manifest の独自キーではなく標準の `content_scripts` を使うのは、Chrome の「未知のキー」警告を避け、注入範囲と照合範囲を 1 か所に保つためです。ON/OFF は `document_start` に同期的に反映できないため、置換は残したまま認識を拒否する緊急停止スイッチにしています。
 - タイマーは `matchOriginAsFallback: true` で about:blank 系フレームにも注入を試み、登録に失敗（非対応の Chrome、パスが `/*` でないパターン等）したら付けずに登録し直し、Setup の「登録状態」に注記を出します。音声認識には付けません（Offscreen 側の URL 照合で about:blank は許可されないため）。
-- 機能ごとに MAIN / ISOLATED の 2 本を同じ条件で登録し、ISOLATED のバンドルもチャネル別（`isolated-timers.js` / `isolated-speech.js`）です。したがって Port は「フレームごと・content script ごとに 1 本」です。
+- 機能ごとに MAIN / ISOLATED の 2 本を同じ条件で注入し、ISOLATED のバンドルもチャネル別（`isolated-timers.js` / `isolated-speech.js`）です。したがって Port は「フレームごと・content script ごとに 1 本」です。
 
 ### Offscreen Document / Service Worker
 
@@ -258,7 +282,7 @@ E2E は Playwright 1.56 同梱の Chromium（141）をヘッドレス（`--headl
 | 単体 | `tests/unit/shared.test.ts`, `forms.test.ts` | match pattern、言語解決、設定のサニタイズ、プロトコル検証、Setup の入力解析 |
 | E2E | `tests/e2e/timers.spec.ts` | 厳しい CSP のページで **同じ操作列をネイティブ（除外パス）と置換版で実行して結果を比較**（ID、cross-clear、引数/this、文字列ハンドラ、例外報告、遅延値変換、マイクロタスク順、ネストクランプ、iframe） |
 | E2E | `tests/e2e/background.spec.ts` | 生 CDP で Chromium を起動し、非アクティブタブで `setInterval(100)` を比較（置換 100 回 / ネイティブ 10 回）。Offscreen を閉じても復旧 |
-| E2E | `tests/e2e/speech.spec.ts` | Chromium の偽マイク（espeak-ng で生成した英語音声 WAV）＋モック Groq で、単発/連続/abort/二重 start/ブロックリスト/429 リトライ/401/未対応言語/API キー未設定/iframe と複数タブ同時/許可リスト外/no-speech |
+| E2E | `tests/e2e/speech.spec.ts` | Chromium の偽マイク（espeak-ng で生成した英語音声 WAV）＋モック Groq で、単発/連続/abort/二重 start/ブロックリスト/429 リトライ/401/未対応言語/API キー未設定/iframe と複数タブ同時/許可リスト外/設定で許可リストを広げられないこと/緊急停止スイッチ/no-speech（E2E ビルドは許可リストを `http://127.0.0.1/*`、除外 `/blocked*` に書き換える） |
 | E2E | `tests/e2e/setup.spec.ts` | インストール時の自動オープン、マイク許可、キー検証（不正/正常）、パターン検証、登録内容、機能 OFF |
 
 補足:
@@ -291,7 +315,8 @@ E2E は Playwright 1.56 同梱の Chromium（141）をヘッドレス（`--headl
 - [ ] Offscreen Document で `AudioContext` が `running` になること（自動再生ポリシー。E2E のヘッドレス環境では問題なし）。`audio-capture` になる場合は error イベントの `message` が `AudioContext is suspended.` になる。
 - [ ] ネイティブ `SpeechRecognition` と同じページで、イベント順序（`start, audiostart, soundstart, speechstart, speechend, soundend, audioend, result, end`）が期待どおりであること。`onend` 内から再 `start()` するアプリ（常時聞き取り型）が動くこと。
 - [ ] 同じページで他の拡張が `setTimeout` を置き換えている場合の共存。
-- [ ] 設定変更（ON/OFF、サイトの追加・除外）が再読み込み後のページに反映されること。
+- [ ] 設定変更（タイマーの ON/OFF・サイトの追加/除外、音声認識の緊急停止）が再読み込み後のページに反映されること。
+- [ ] `manifest.json` の音声認識の許可サイトを書き換えて再ビルド・拡張の再読み込みをすると、そのサイトでだけ置換されること。2 つのエントリを食い違わせるとビルドが失敗すること（`dist/manifest.json` を直接食い違わせた場合は認識が拒否され、Setup に警告が出ること）。
 - [ ] bfcache（戻る/進む）から復帰したページでタイマー・認識が動くこと。
 - [ ] 拡張機能を更新/再読み込みした後、既存タブ（古い content script）がエラーを出し続けないこと（再読み込みで復旧すること）。
 - [ ] 最低バージョン付近の Chrome（116〜）で、`matchOriginAsFallback` 非対応時に登録が「注記あり OK」になり動作すること。
@@ -303,7 +328,8 @@ E2E は Playwright 1.56 同梱の Chromium（141）をヘッドレス（`--headl
 ```
 src/
   manifest.json                 ビルド時に version 等を埋めて dist/ に出力
-  shared/                       全コンテキスト共通（設定, match pattern, 言語, メッセージ検証）
+  shared/                       全コンテキスト共通（設定, match pattern, 言語, メッセージ検証,
+                                音声認識の許可リスト = manifest の読み取りと検証）
   main/                         MAIN world（ページと同じ world）
     natives.ts                  document_start でのネイティブ退避, toString 偽装
     bridge.ts                   MAIN 側ハンドシェイクと専用ポート
@@ -311,7 +337,7 @@ src/
     speech/classes.ts           SpeechRecognition 互換クラス群
     timers-entry.ts, speech-entry.ts
   isolated/relay.ts             ISOLATED world の中継（チャネルごとにビルド）
-  background/                   Service Worker, content script 動的登録
+  background/                   Service Worker, タイマー用 content script の動的登録
   offscreen/                    Offscreen Document, タイマー Worker
     stt/                        hub（マイク+VAD）, segmenter, session, manager, groq, filter, wav
   setup/                        Setup / Options ページ

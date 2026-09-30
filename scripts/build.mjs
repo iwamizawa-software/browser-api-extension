@@ -98,6 +98,39 @@ for (const f of ["ort-wasm-simd-threaded.wasm", "ort-wasm-simd-threaded.mjs"]) a
 const manifest = JSON.parse(await readFile(join(root, "src/manifest.json"), "utf8"));
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 manifest.version = pkg.version;
+// Speech allow-list = the speech content_scripts entries (edited by hand).
+// Refuse to build a manifest whose entries are inconsistent.
+const speechEntries = (manifest.content_scripts ?? []).filter((e) =>
+  e.js?.some((f) => f === "main-speech.js" || f === "isolated-speech.js"),
+);
+if (e2e) {
+  // Tests run against a local server: allow it (any port) and keep one path
+  // excluded to test the "not allowed" behaviour.
+  for (const e of speechEntries) {
+    e.matches = ["http://127.0.0.1/*"];
+    e.exclude_matches = ["http://127.0.0.1/blocked*"];
+  }
+}
+{
+  // Reuse the extension's own validator (src/shared/speech-allowlist.ts).
+  const bundled = await build({
+    entryPoints: [join(root, "src/shared/speech-allowlist.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    write: false,
+    logLevel: "warning",
+  });
+  const code = bundled.outputFiles[0].text;
+  const { speechAllowlistFromManifest, validateSpeechAllowlist } = await import(
+    "data:text/javascript;base64," + Buffer.from(code).toString("base64")
+  );
+  const problems = validateSpeechAllowlist(speechAllowlistFromManifest(manifest));
+  if (problems.length) {
+    console.error("manifest.json speech allow-list is invalid:\n  " + problems.join("\n  "));
+    process.exit(1);
+  }
+}
 if (e2e) {
   const origin = new URL(E2E_GROQ_BASE).origin;
   manifest.name += " (E2E test build)";

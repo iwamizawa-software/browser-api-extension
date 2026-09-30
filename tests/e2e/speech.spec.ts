@@ -91,11 +91,9 @@ async function launch(wav: string): Promise<Launched> {
     `--use-file-for-fake-audio-capture=${wav}`,
   ]);
   await grantMicrophone(ext);
-  await configure(
-    ext.sw,
-    { speech: { enabled: true, matches: [`${site.url}/*`], excludeMatches: [`${site.url}/blocked*`] } },
-    API_KEY,
-  );
+  // The speech allow-list is fixed in manifest.json; the E2E build allows
+  // http://127.0.0.1/* except /blocked* (see scripts/build.mjs).
+  await configure(ext.sw, {}, API_KEY);
   return ext;
 }
 
@@ -263,6 +261,40 @@ test.describe("with speech input", () => {
     expect(await blocked.evaluate(probe)).not.toContain("chrome-extension://");
     const allowed = await open(ext, "/index.html");
     expect(await allowed.evaluate(probe)).toContain("chrome-extension://");
+  });
+
+  test("turning speech off in settings -> service-not-allowed without using the mic", async () => {
+    await ext.sw.evaluate(() => chrome.storage.local.set({ settings: { speech: { enabled: false } } }));
+    try {
+      const page = await open(ext, "/index.html");
+      await click(page);
+      const ev = await waitForEvent(page, "end");
+      expect(ev).toEqual(["second-start:InvalidStateError", "error:service-not-allowed", "end"]);
+      expect(groq.requests).toHaveLength(0);
+    } finally {
+      await ext.sw.evaluate(() => chrome.storage.local.set({ settings: {} }));
+    }
+  });
+
+  test("settings cannot widen the manifest allow-list", async () => {
+    // Old-style setting from before the allow-list moved to manifest.json.
+    await ext.sw.evaluate(() =>
+      chrome.storage.local.set({ settings: { speech: { enabled: true, matches: ["<all_urls>"], excludeMatches: [] } } }),
+    );
+    try {
+      const page = await open(ext, "/blocked.html");
+      const hasOurs = await page.evaluate(() => {
+        try {
+          new (window as unknown as { webkitSpeechRecognitionEvent: new (t: string) => Event }).webkitSpeechRecognitionEvent("x");
+          return false;
+        } catch (e) {
+          return ((e as Error).stack ?? "").includes("chrome-extension://");
+        }
+      });
+      expect(hasOurs).toBe(false);
+    } finally {
+      await ext.sw.evaluate(() => chrome.storage.local.set({ settings: {} }));
+    }
   });
 
   test("missing API key -> service-not-allowed", async () => {

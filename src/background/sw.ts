@@ -10,6 +10,7 @@
 import { applyRegistrations } from "./registration";
 import { STORAGE_KEYS, sanitizeSettings } from "../shared/settings";
 import type { RuntimeRequest } from "../shared/protocol";
+import { speechAllowlistFromManifest, validateSpeechAllowlist } from "../shared/speech-allowlist";
 
 const OFFSCREEN_PATH = "offscreen.html";
 const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
@@ -74,7 +75,15 @@ async function restrictStorageToTrustedContexts(): Promise<void> {
   }
 }
 
+function checkSpeechAllowlist(): void {
+  // manifest.json may have been edited by hand in dist/ (no build-time check).
+  // The offscreen document fails closed on these problems; make them visible.
+  const problems = validateSpeechAllowlist(speechAllowlistFromManifest(chrome.runtime.getManifest()));
+  if (problems.length) console.error("manifest.json speech allow-list problems:\n" + problems.join("\n"));
+}
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
+  checkSpeechAllowlist();
   void restrictStorageToTrustedContexts();
   void syncRegistrations();
   if (reason === chrome.runtime.OnInstalledReason.INSTALL) {
@@ -117,6 +126,7 @@ async function handle(msg: RuntimeRequest, sender: chrome.runtime.MessageSender)
         settings: sanitizeSettings(stored[STORAGE_KEYS.settings]),
         apiKey: typeof apiKey === "string" ? apiKey : "",
         setupUrl: chrome.runtime.getURL("setup.html"),
+        speechAllowlist: speechAllowlistFromManifest(chrome.runtime.getManifest()),
       };
     }
     case "mic-state": {

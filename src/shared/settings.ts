@@ -19,7 +19,14 @@ export interface FeatureScope {
   excludeMatches: string[];
 }
 
-export interface SpeechSettings extends FeatureScope {
+export interface SpeechSettings {
+  /**
+   * Kill switch. OFF makes every recognition fail with service-not-allowed
+   * without touching the microphone. It can only reduce what the manifest
+   * allows: the per-site allow-list is the speech content_scripts entries in
+   * manifest.json (see src/shared/speech-allowlist.ts), not a setting.
+   */
+  enabled: boolean;
   /** Segments whose no_speech_prob is above this are discarded (0..1). */
   noSpeechProbThreshold: number;
   /** Segments whose avg_logprob is below this are discarded (<= 0). */
@@ -66,10 +73,6 @@ export function defaultSettings(): Settings {
     timers: { enabled: true, matches: ["<all_urls>"], excludeMatches: [] },
     speech: {
       enabled: true,
-      // Deliberately empty: any site on this list can turn the microphone on
-      // and read transcripts without a per-site permission prompt.
-      matches: [],
-      excludeMatches: [],
       noSpeechProbThreshold: 0.6,
       avgLogprobThreshold: -1.0,
       blocklistEnabled: true,
@@ -152,7 +155,7 @@ export function sanitizeSettings(v: unknown): Settings {
   return {
     timers: sanitizeScope(o.timers, d.timers),
     speech: {
-      ...sanitizeScope(o.speech, d.speech),
+      enabled: bool(s.enabled, d.speech.enabled),
       noSpeechProbThreshold: num(s.noSpeechProbThreshold, d.speech.noSpeechProbThreshold, 0, 1),
       avgLogprobThreshold: num(s.avgLogprobThreshold, d.speech.avgLogprobThreshold, -20, 0),
       blocklistEnabled: bool(s.blocklistEnabled, d.speech.blocklistEnabled),

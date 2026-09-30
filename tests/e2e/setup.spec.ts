@@ -48,22 +48,27 @@ test("setup page opens on install and manages key, microphone and settings", asy
   await expect(page.locator("#key-input")).toHaveValue("");
   expect(await ext.sw.evaluate(() => chrome.storage.local.get("groqApiKey"))).toEqual({ groqApiKey: GOOD });
 
+  // The speech allow-list is shown read-only from manifest.json (E2E build values).
+  await expect(page.locator("#speech-allowlist")).toContainText("http://127.0.0.1/*");
+  await expect(page.locator("#speech-allowlist")).toContainText("除外: http://127.0.0.1/blocked*");
+  await expect(page.locator("#speech-allowlist-problems")).toHaveText("");
+  expect(await page.locator("#speech-matches").count()).toBe(0);
+
   // Invalid patterns are refused.
-  await page.fill("#speech-matches", "not a pattern");
+  await page.fill("#timers-exclude", "not a pattern");
   await page.click("#settings-save");
   await expect(page.locator("#settings-result")).toContainText("不正な match pattern");
 
-  // Valid settings register content scripts.
-  await page.fill("#speech-matches", "https://example.com/*");
+  // Valid settings register the timer content scripts.
   await page.fill("#timers-exclude", "https://no-timers.example/*");
   await page.click("#settings-save");
   await expect(page.locator("#settings-result")).toHaveText("保存しました。");
   await expect(page.locator("#registration-state")).toContainText("OK");
   const scripts = await ext.sw.evaluate(() => chrome.scripting.getRegisteredContentScripts());
   const byId = Object.fromEntries(scripts.map((s) => [s.id, s]));
-  expect(Object.keys(byId).sort()).toEqual(["bae-speech-isolated", "bae-speech-main", "bae-timers-isolated", "bae-timers-main"]);
-  expect(byId["bae-speech-main"]!.matches).toEqual(["https://example.com/*"]);
-  expect(byId["bae-speech-main"]!.world).toBe("MAIN");
+  // Speech scripts are static in manifest.json, never registered dynamically.
+  expect(Object.keys(byId).sort()).toEqual(["bae-timers-isolated", "bae-timers-main"]);
+  expect(byId["bae-timers-main"]!.world).toBe("MAIN");
   expect(byId["bae-timers-main"]!.excludeMatches).toEqual(["https://no-timers.example/*"]);
   expect(byId["bae-timers-main"]!.runAt).toBe("document_start");
   expect(byId["bae-timers-main"]!.allFrames).toBe(true);
@@ -81,12 +86,16 @@ test("setup page opens on install and manages key, microphone and settings", asy
 
   await page.screenshot({ path: "test-results/setup.png", fullPage: true });
 
-  // Disabling a feature unregisters it.
+  // Disabling timers unregisters them; the speech switch is only a stored flag.
+  await page.uncheck("#timers-enabled");
   await page.uncheck("#speech-enabled");
   await page.click("#settings-save");
   await expect(page.locator("#registration-state")).toContainText("OK");
   const after = await ext.sw.evaluate(() => chrome.scripting.getRegisteredContentScripts());
-  expect(after.map((s) => s.id).sort()).toEqual(["bae-timers-isolated", "bae-timers-main"]);
+  expect(after).toEqual([]);
+  const stored = (await ext.sw.evaluate(() => chrome.storage.local.get("settings"))) as { settings: { speech: Record<string, unknown> } };
+  expect(stored.settings.speech.enabled).toBe(false);
+  expect("matches" in stored.settings.speech).toBe(false);
 
   // Delete the key.
   await page.click("#key-delete");
