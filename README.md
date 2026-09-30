@@ -281,8 +281,8 @@ E2E は Playwright 1.56 同梱の Chromium（141）をヘッドレス（`--headl
 | 単体 | `tests/unit/stt.test.ts` | Segmenter、WAV、Groq クライアント（リクエスト形式、リトライ、401、中断）、幻覚フィルタ、セッションのイベント順序（単発/連続/stop/abort/no-speech/15 秒無音/エラー） |
 | 単体 | `tests/unit/shared.test.ts`, `forms.test.ts` | match pattern、言語解決、設定のサニタイズ、プロトコル検証、Setup の入力解析 |
 | E2E | `tests/e2e/timers.spec.ts` | 厳しい CSP のページで **同じ操作列をネイティブ（除外パス）と置換版で実行して結果を比較**（ID、cross-clear、引数/this、文字列ハンドラ、例外報告、遅延値変換、マイクロタスク順、ネストクランプ、iframe） |
-| E2E | `tests/e2e/background.spec.ts` | 生 CDP で Chromium を起動し、非アクティブタブで `setInterval(100)` を比較（置換 100 回 / ネイティブ 10 回）。Offscreen を閉じても復旧 |
-| E2E | `tests/e2e/speech.spec.ts` | Chromium の偽マイク（espeak-ng で生成した英語音声 WAV）＋モック Groq で、単発/連続/abort/二重 start/ブロックリスト/429 リトライ/401/未対応言語/API キー未設定/iframe と複数タブ同時/許可リスト外/設定で許可リストを広げられないこと/緊急停止スイッチ/no-speech（E2E ビルドは許可リストを `http://127.0.0.1/*`、除外 `/blocked*` に書き換える） |
+| E2E | `tests/e2e/background.spec.ts` | 生 CDP で Chromium を起動し、非アクティブタブで `setInterval(100)` を比較（置換 100 回 / ネイティブ 10 回）。Offscreen を閉じても、さらに Service Worker を強制停止（`ServiceWorker.stopAllWorkers` = 30 秒アイドル停止の再現）しても、Chrome が SW を起こして Offscreen を作り直し、100 回で復旧 |
+| E2E | `tests/e2e/speech.spec.ts` | Chromium の偽マイク（espeak-ng で生成した英語音声 WAV）＋モック Groq で、単発/連続/abort/二重 start/ブロックリスト/429 リトライ/401/未対応言語/API キー未設定/iframe と複数タブ同時/許可リスト外/設定で許可リストを広げられないこと/緊急停止スイッチ/Service Worker 強制停止後の認識/no-speech（E2E ビルドは許可リストを `http://127.0.0.1/*`、除外 `/blocked*` に書き換える） |
 | E2E | `tests/e2e/setup.spec.ts` | インストール時の自動オープン、マイク許可、キー検証（不正/正常）、パターン検証、登録内容、機能 OFF |
 
 補足:
@@ -300,7 +300,7 @@ E2E は Playwright 1.56 同梱の Chromium（141）をヘッドレス（`--headl
 - [ ] **厳しい CSP のテストページ**（別拡張で CSP を付与、または `Content-Security-Policy` ヘッダ / `<meta http-equiv>` で `default-src 'none'; script-src 'self'; worker-src 'none'; connect-src 'none'` 程度を再現）で、タイマー置換と SpeechRecognition（実マイク・実 Groq）が動くこと。
   - 特に「対象ページに CSP を付けている既存の他拡張」と同時に入れた状態で確認すること（E2E はサーバーのヘッダで再現したもののみ）。
 - [ ] **バックグラウンドタブで `setInterval(…, 100)` が実際にスロットリングされないこと**（通常の Chrome で、タブを切り替えた状態 / ウィンドウを最小化した状態 / 別ウィンドウで覆った状態のそれぞれで、ネイティブ（除外サイト）と回数を比較）。
-- [ ] **長時間（30 分以上）放置後** も、タイマーと認識が動くこと。バックグラウンド 5 分以降の Chrome の「集中的なスロットリング」下でも回数が落ちないこと。`chrome://extensions` の Service Worker が停止した後でも動くこと。途中で Offscreen Document が破棄された場合（`chrome://inspect/#other` から offscreen を閉じる等）も再作成されること。
+- [ ] **長時間（30 分以上）放置後** も、タイマーと認識が動くこと。バックグラウンド 5 分以降の Chrome の「集中的なスロットリング」下でも回数が落ちないこと。`chrome://extensions` の Service Worker が停止した後でも動くこと（強制停止からの復帰は E2E で確認済み。実際の 30 秒アイドル停止を挟んだ長時間の確認は未実施）。途中で Offscreen Document が破棄された場合（`chrome://inspect/#other` から offscreen を閉じる等）も再作成されること。
 - [ ] **複数タブ同時の音声認識**、および **iframe 内での動作**（同一オリジン / クロスオリジン。クロスオリジン iframe は `allow="microphone"` が無いと `not-allowed` になること）。
 - [ ] **日本語・英語での認識**（`lang="ja-JP"` / `"en-US"`、未指定で `<html lang>` / `navigator.language` が使われること）、**無音・環境音だけのときに幻覚が出ないこと**（「ご視聴ありがとうございました」等が出ない）、**no-speech エラーの挙動**（約 8 秒で `audioend → error(no-speech) → end`）。
 - [ ] **API キー未設定・不正・レート制限時のエラー挙動**: 未設定 → `service-not-allowed`、不正 → `not-allowed`、429 → 数回リトライ後に成功 or `network`。いずれもページの DevTools コンソール（拡張機能のコンテキスト）に Setup ページへの案内が出て、キーがログに出ないこと。

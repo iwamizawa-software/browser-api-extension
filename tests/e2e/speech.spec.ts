@@ -308,6 +308,28 @@ test.describe("with speech input", () => {
       await ext.sw.evaluate((k) => chrome.storage.local.set({ groqApiKey: k }), API_KEY);
     }
   });
+  // Keep this last in the describe: it replaces the service worker instance.
+  test("service worker stopped (30s idle): recognition still works (SW is woken on demand)", async () => {
+    await ext.sw.evaluate(() => ((self as unknown as { __oldInstance: boolean }).__oldInstance = true));
+    const setup = await ext.context.newPage();
+    await setup.goto(`chrome-extension://${ext.extensionId}/setup.html`);
+    const cdp = await ext.context.newCDPSession(setup);
+    await cdp.send("ServiceWorker.enable");
+    await cdp.send("ServiceWorker.stopAllWorkers");
+    await setup.close();
+    const page = await open(ext, "/index.html");
+    await click(page);
+    const ev = await waitForEvent(page, "end");
+    expect(ev.some((e) => e.startsWith("result:0:1:true:1:Hello world."))).toBe(true);
+    // The old instance really stopped (its handle is detached), so the
+    // get-config / ensure-offscreen requests above were answered by a service
+    // worker instance that Chrome started on demand.
+    const alive = await ext.sw.evaluate(() => (self as unknown as { __oldInstance?: boolean }).__oldInstance).then(
+      () => "alive",
+      () => "detached",
+    );
+    expect(alive).toBe("detached");
+  });
 });
 
 test.describe("with silence", () => {
@@ -320,6 +342,7 @@ test.describe("with silence", () => {
   });
 
   test("no speech for 8s -> audioend, error(no-speech), end", async () => {
+    groq.requests.length = 0;
     const page = await open(ext, "/index.html");
     await click(page);
     const ev = await waitForEvent(page, "end", 20_000);

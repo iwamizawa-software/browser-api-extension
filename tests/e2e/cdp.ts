@@ -80,6 +80,21 @@ export class RawBrowser {
     throw new Error("service worker not responsive");
   }
 
+  /**
+   * Force-stops the extension service worker, like Chrome does after ~30s idle.
+   * Uses an extension page's session (ServiceWorker domain is per origin).
+   */
+  async stopServiceWorker(extensionPageSession: string): Promise<void> {
+    await this.send("ServiceWorker.enable", {}, extensionPageSession);
+    await this.send("ServiceWorker.stopAllWorkers", {}, extensionPageSession);
+    for (let i = 0; i < 100; i++) {
+      const { targetInfos } = await this.send<{ targetInfos: { type: string }[] }>("Target.getTargets");
+      if (!targetInfos.some((t) => t.type === "service_worker")) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error("service worker did not stop");
+  }
+
   send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = 30_000): Promise<T> {
     const id = ++this.id;
     return new Promise<T>((resolve, reject) => {

@@ -87,3 +87,30 @@ test("offscreen document closed while hidden: timers reconnect and stay unthrott
   );
   expect(contexts).toBe(1);
 });
+
+test("service worker stopped (30s idle) and offscreen closed: timers still recover", async () => {
+  const replaced = await browser.newTab(site.url + "/replaced.html");
+  await browser.evaluate(replaced, START);
+  await browser.newTab(site.url + "/front.html");
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(await browser.evaluate(replaced, "document.visibilityState")).toBe("hidden");
+  await browser.evaluate(sw, "self.__oldInstance = true");
+  // Worst case: both the offscreen document and the service worker are gone.
+  expect(await browser.evaluate<boolean>(sw, `chrome.offscreen.closeDocument().then(() => true, () => false)`)).toBe(true);
+  const setupPage = await browser.attach(
+    await browser.waitForTarget((t) => t.type === "page" && t.url.startsWith("chrome-extension://") && t.url.endsWith("/setup.html")),
+  );
+  await browser.stopServiceWorker(setupPage);
+  await new Promise((r) => setTimeout(r, 1500));
+  const r0 = await browser.evaluate<number>(replaced, COUNT);
+  await new Promise((r) => setTimeout(r, 10_000));
+  const r1 = await browser.evaluate<number>(replaced, COUNT);
+  console.log(`after SW stop + offscreen close: ${r1 - r0} ticks in 10s`);
+  expect(r1 - r0).toBeGreaterThanOrEqual(90);
+  // A fresh service worker instance was started on demand and recreated the offscreen document.
+  sw = await browser.attachServiceWorker();
+  expect(await browser.evaluate<string>(sw, "String(self.__oldInstance)")).toBe("undefined");
+  expect(
+    await browser.evaluate<number>(sw, `chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }).then((c) => c.length)`),
+  ).toBe(1);
+});
