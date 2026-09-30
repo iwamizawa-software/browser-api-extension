@@ -1,0 +1,118 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1f1f1f;
+  --muted: #5f6368;
+  --border: #dadce0;
+  --accent: #1a73e8;
+  --ok: #188038;
+  --err: #d93025;
+  --notice: #fef7e0;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #202124;
+    --fg: #e8eaed;
+    --muted: #9aa0a6;
+    --border: #3c4043;
+    --accent: #8ab4f8;
+    --ok: #81c995;
+    --err: #f28b82;
+    --notice: #3c3522;
+  }
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.6 system-ui, sans-serif;
+}
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+h1 {
+  font-size: 1.6rem;
+}
+h2 {
+  font-size: 1.15rem;
+  margin-top: 0;
+}
+section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.notice {
+  background: var(--notice);
+}
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 12px 0;
+  padding: 8px 12px 12px;
+}
+label {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+}
+label.check {
+  color: var(--fg);
+}
+input[type="password"],
+input[type="number"],
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  font: 14px ui-monospace, monospace;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+}
+input[type="number"] {
+  max-width: 12em;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+button {
+  font: inherit;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+.ok {
+  color: var(--ok);
+}
+.err {
+  color: var(--err);
+  white-space: pre-wrap;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #d93025;
+  color: #fff;
+  font-size: 0.8em;
+  font-weight: bold;
+}

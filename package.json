@@ -1,0 +1,26 @@
+{
+  "name": "browser-api-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome MV3 extension that overrides setTimeout/setInterval and SpeechRecognition under strict page CSP",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:e2e": "node scripts/build.mjs --e2e",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:e2e": "npm run build:e2e && playwright test",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/chrome": "^0.3.4",
+    "@types/node": "^22.20.4",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@ricky0123/vad-web": "^0.0.31"
+  }
+}
