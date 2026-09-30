@@ -41,6 +41,7 @@ export const NativeWeakMap = w.WeakMap;
 export const NativeMap = w.Map;
 export const NativeDOMException = w.DOMException;
 export const NativeTypeError = w.TypeError;
+export const NativeEvalError = w.EvalError;
 export const NativeEvent = w.Event;
 export const NativeEventTarget = w.EventTarget;
 

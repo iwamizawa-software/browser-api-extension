@@ -17,6 +17,7 @@ import {
   NativeMessageChannel,
   NativeTypeError,
   NativeFunction,
+  NativeEvalError,
   apply,
   defineProperty,
   getOwnPropertyDescriptor,
@@ -116,7 +117,11 @@ export function installTimers(getBridge: () => MainBridge | null): InstalledTime
 
   function onNativeWake(): void {
     nativeArmed = null;
-    drain();
+    // Never run callbacks or re-arm from inside a native timer task: Chrome
+    // would count our wake-up chain as nested timers and clamp/deprioritize
+    // it. Hop to the private MessageChannel (nesting level 0) instead; the
+    // emulated nesting level is tracked by the scheduler itself.
+    postContinuation();
   }
 
   const scheduler = new TimerScheduler({ now, invoke, onChange: () => draining || sync() });
@@ -128,14 +133,16 @@ export function installTimers(getBridge: () => MainBridge | null): InstalledTime
     sync();
   }, true);
 
-  function cspAllowsStringCompilation(): boolean {
+  function cspAllowsStringCompilation(code: string): boolean {
     try {
       // Chrome checks (and reports) eval permission when a string handler is
-      // scheduled and returns 0 if blocked; `new Function` hits the same check.
-      new NativeFunction("");
+      // scheduled and returns 0 if blocked. Compiling (not running) the code
+      // with the Function constructor goes through the same CSP check.
+      new NativeFunction(code);
       return true;
-    } catch {
-      return false;
+    } catch (e) {
+      // A SyntaxError here is not a CSP decision; it surfaces when the timer runs.
+      return !(e instanceof NativeEvalError);
     }
   }
 
@@ -147,7 +154,7 @@ export function installTimers(getBridge: () => MainBridge | null): InstalledTime
     const handler = toTimerHandler(handlerArg);
     const timeout = toLong(timeoutArg);
     if (typeof handler === "string") {
-      if (!cspAllowsStringCompilation()) return 0;
+      if (!cspAllowsStringCompilation(handler)) return 0;
       if (handler === "") return 0;
     }
     return scheduler.add(handler, timeout, rest, repeat);

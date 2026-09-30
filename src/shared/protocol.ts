@@ -84,6 +84,14 @@ export type SpeechDownFromOffscreen = SpeechSessionEvent | { t: "log"; level: "w
 
 export type SpeechDownToMain = SpeechSessionEvent | { t: "reset" } | { t: "ack" };
 
+/** Sent by the offscreen document right after accepting a runtime.Port. */
+export interface OffscreenHello {
+  t: "hello";
+}
+export function isOffscreenHello(v: unknown): v is OffscreenHello {
+  return isObj(v) && v.t === "hello";
+}
+
 // ---- extension-internal runtime messages ------------------------------------
 
 export type RuntimeRequest =
