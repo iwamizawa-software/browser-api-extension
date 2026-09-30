@@ -20,6 +20,11 @@ import { RecognitionSession, type PrepareResult } from "./session";
 import { encodeWav } from "./wav";
 
 const MAX_SESSIONS_PER_FRAME = 8;
+
+/** Error messages reach page scripts; never let them reveal the extension ID. */
+export function scrubMessage(message: string): string {
+  return message.replace(/chrome-extension:\/\/[^\s'")]*/g, "[extension]").slice(0, 500);
+}
 const MAX_SESSIONS_TOTAL = 32;
 
 export interface OffscreenConfig {
@@ -66,7 +71,7 @@ export class SpeechManager {
         const sid = msg.sid;
         const session = new RecognitionSession(msg.continuous, {
           emit: (out) => {
-            post({ ...out, sid } as SpeechDownFromOffscreen);
+            post((out.t === "error" ? { ...out, message: scrubMessage(out.message), sid } : { ...out, sid }) as SpeechDownFromOffscreen);
             if (out.t === "ev" && out.type === "end" && sessions.get(sid) === session) {
               sessions.delete(sid);
               this.total--;

@@ -12,8 +12,7 @@ const html = { type: "text/html", body: "<!doctype html><title>t</title>" };
 test.beforeAll(async () => {
   site = await serveSite({ "/replaced.html": html, "/native.html": html, "/front.html": html });
   browser = await RawBrowser.launch(EXTENSION_DIR);
-  const swTarget = await browser.waitForTarget((t) => t.type === "service_worker" && t.url.startsWith("chrome-extension://"));
-  sw = await browser.attach(swTarget);
+  sw = await browser.attachServiceWorker();
   await browser.evaluate(
     sw,
     `(async () => {
@@ -62,4 +61,29 @@ test("background tab: setInterval(100) keeps running at ~10Hz (native is throttl
   expect(maxGap).toBeLessThan(200);
   // Sanity check that the environment really throttles native timers.
   expect(n1 - n0).toBeLessThan(30);
+});
+
+test("offscreen document closed while hidden: timers reconnect and stay unthrottled", async () => {
+  const replaced = await browser.newTab(site.url + "/replaced.html");
+  await browser.evaluate(replaced, START);
+  await browser.newTab(site.url + "/front.html");
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(await browser.evaluate(replaced, "document.visibilityState")).toBe("hidden");
+  // Simulate Chrome discarding the offscreen document.
+  const closed = await browser.evaluate<boolean>(
+    sw,
+    `chrome.offscreen.closeDocument().then(() => true, () => false)`,
+  );
+  expect(closed).toBe(true);
+  await new Promise((r) => setTimeout(r, 1500));
+  const r0 = await browser.evaluate<number>(replaced, COUNT);
+  await new Promise((r) => setTimeout(r, 10_000));
+  const r1 = await browser.evaluate<number>(replaced, COUNT);
+  console.log(`after offscreen close: ${r1 - r0} ticks in 10s`);
+  expect(r1 - r0).toBeGreaterThanOrEqual(90);
+  const contexts = await browser.evaluate<number>(
+    sw,
+    `chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] }).then((c) => c.length)`,
+  );
+  expect(contexts).toBe(1);
 });

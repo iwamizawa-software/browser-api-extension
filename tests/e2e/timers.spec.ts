@@ -15,7 +15,11 @@ test.beforeAll(async () => {
     "/replaced.html": page("replaced"),
     "/native.html": page("native"),
     "/frame.html": { type: "text/html", body: `<!doctype html><title>frame</title>` },
-    "/page.js": { type: "text/javascript", body: `window.pageScriptRan = true;` },
+    "/page.js": {
+      type: "text/javascript",
+      // Runs as early as a page script can; records every window message.
+      body: `window.pageScriptRan = true; window.__seen = []; addEventListener("message", (e) => window.__seen.push(JSON.stringify(e.data)), true);`,
+    },
     // Started by a real click (not page.evaluate): DevTools evaluation bypasses
     // CSP eval checks for everything on its call stack.
     "/scenario.js": {
@@ -139,6 +143,8 @@ test("replaced timers behave like native ones under a strict CSP", async () => {
   await native.goto(site.url + "/native.html");
 
   expect(await replaced.evaluate(() => (window as unknown as { pageScriptRan: boolean }).pageScriptRan)).toBe(true);
+  // The MAIN <-> ISOLATED handshake is invisible to page listeners.
+  expect(await replaced.evaluate(() => (window as unknown as { __seen: string[] }).__seen)).toEqual([]);
   // The replacement is active on one page and not on the other.
   expect(await replaced.evaluate(callbackStack)).toContain("chrome-extension://");
   expect(await native.evaluate(callbackStack)).not.toContain("chrome-extension://");

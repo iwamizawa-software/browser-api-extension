@@ -97,8 +97,7 @@ export function isOffscreenHello(v: unknown): v is OffscreenHello {
 export type RuntimeRequest =
   | { t: "ensure-offscreen" }
   | { t: "get-config" }
-  | { t: "mic-state"; active: boolean }
-  | { t: "sync-registrations" };
+  | { t: "mic-state"; active: boolean };
 
 // ---- validators -----------------------------------------------------------------
 

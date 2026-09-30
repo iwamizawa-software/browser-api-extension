@@ -114,3 +114,13 @@ describe("protocol validators", () => {
     expect(isSpeechSessionEvent({ t: "result", sid: 1, transcript: "a", confidence: 2 })).toBe(false);
   });
 });
+
+import { scrubMessage } from "../../src/offscreen/stt/manager";
+describe("scrubMessage", () => {
+  it("hides extension URLs from page-visible error messages", () => {
+    expect(scrubMessage("failed to load chrome-extension://abcdefghijklmnop/vad/x.onnx: 404")).toBe(
+      "failed to load [extension] 404",
+    );
+    expect(scrubMessage("x".repeat(600))).toHaveLength(500);
+  });
+});

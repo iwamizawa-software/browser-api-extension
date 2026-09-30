@@ -65,13 +65,28 @@ export class RawBrowser {
     return new RawBrowser(proc, ws, userDataDir);
   }
 
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+  /** Attaches to the extension service worker and waits until it evaluates. */
+  async attachServiceWorker(): Promise<string> {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const id = await this.waitForTarget((t) => t.type === "service_worker" && t.url.startsWith("chrome-extension://"));
+      const session = await this.attach(id);
+      await this.send("Runtime.runIfWaitingForDebugger", {}, session).catch(() => {});
+      const ok = await this.send("Runtime.evaluate", { expression: "typeof chrome.storage", returnByValue: true }, session, 3_000)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) return session;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error("service worker not responsive");
+  }
+
+  send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string, timeoutMs = 30_000): Promise<T> {
     const id = ++this.id;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP ${method} timed out`));
-      }, 30_000);
+      }, timeoutMs);
       this.pending.set(id, {
         resolve: (v) => {
           clearTimeout(timer);

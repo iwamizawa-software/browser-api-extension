@@ -101,10 +101,6 @@ function isFromOffscreen(sender: chrome.runtime.MessageSender): boolean {
   return sender.id === chrome.runtime.id && !sender.tab && sender.url === offscreenUrl;
 }
 
-function isFromExtensionPage(sender: chrome.runtime.MessageSender): boolean {
-  return sender.id === chrome.runtime.id && typeof sender.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
-}
-
 async function handle(msg: RuntimeRequest, sender: chrome.runtime.MessageSender): Promise<unknown> {
   switch (msg.t) {
     case "ensure-offscreen":
@@ -136,17 +132,13 @@ async function handle(msg: RuntimeRequest, sender: chrome.runtime.MessageSender)
       });
       return { ok: true };
     }
-    case "sync-registrations":
-      if (!isFromExtensionPage(sender) || sender.tab === undefined) throw new Error("forbidden");
-      await syncRegistrations();
-      return { ok: true };
   }
 }
 
 chrome.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
   if (typeof msg !== "object" || msg === null) return false;
   const t = (msg as { t?: unknown }).t;
-  if (t !== "ensure-offscreen" && t !== "get-config" && t !== "mic-state" && t !== "sync-registrations") return false;
+  if (t !== "ensure-offscreen" && t !== "get-config" && t !== "mic-state") return false;
   if (sender.id !== chrome.runtime.id) return false;
   handle(msg as RuntimeRequest, sender).then(
     (r) => sendResponse(r),
