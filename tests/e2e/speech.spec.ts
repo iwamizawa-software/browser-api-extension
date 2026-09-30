@@ -63,10 +63,13 @@ async function events(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as { __events: string[] }).__events);
 }
 
+/** Waits for an exact event name, or for an event ending with `needle` if it starts with ":". */
 async function waitForEvent(page: Page, needle: string, timeout = 30_000): Promise<string[]> {
-  await page.waitForFunction((n) => (window as unknown as { __events: string[] }).__events.some((e) => e.endsWith(n)), needle, {
-    timeout,
-  });
+  await page.waitForFunction(
+    (n) => (window as unknown as { __events: string[] }).__events.some((e) => e === n || (n.startsWith(":") && e.endsWith(n))),
+    needle,
+    { timeout },
+  );
   return events(page);
 }
 
