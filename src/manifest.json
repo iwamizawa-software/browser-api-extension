@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Unthrottled Timers & Whisper SpeechRecognition",
+  "version": "0.1.0",
+  "description": "Replaces setTimeout/setInterval with background-safe timers and SpeechRecognition with Silero VAD + Groq Whisper, regardless of page CSP.",
+  "minimum_chrome_version": "116",
+  "permissions": ["offscreen", "storage", "scripting"],
+  "host_permissions": ["<all_urls>", "https://api.groq.com/*"],
+  "background": {
+    "service_worker": "sw.js"
+  },
+  "action": {
+    "default_title": "Unthrottled Timers & Whisper SpeechRecognition (open setup)"
+  },
+  "options_page": "setup.html",
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; connect-src 'self' https://api.groq.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  }
+}
